@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react'
 import {
   Activity, AlertTriangle, Archive, CalendarClock, Check, CheckCircle2,
   Clock3, Download, FileUp, Filter, Layers3, Pencil, Plus, Search,
-  Trash2, Users, X
+  Trash2, Users, X, LockKeyhole
 } from 'lucide-react'
 
 const STORE_KEY = 'tablero-productividad-v1'
@@ -18,6 +18,7 @@ const diffDays = (a,b) => {
 const statusOf = (a) => a.executionDate ? 'finalizada' : (a.dueDate && a.dueDate < todayISO() ? 'retrasada' : 'en_curso')
 const statusLabels = { en_curso:'En curso', retrasada:'Retrasada', finalizada:'Finalizada' }
 const priorityLabels = { alta:'Alta', media:'Media', baja:'Baja' }
+const plantOptions = ['PL BARRANQUILLA','PL MUÑA','PL JAMUNDÍ','PL GIRARDOTA','TODAS','N/A']
 const initialData = {
   buckets: ['Sulfato ferroso','Sulfato de magnesio','Desarrollo de producto','Mejoras de proceso'],
   processes: ['I+D','Calidad','Producción','Mantenimiento','Ambiental'],
@@ -41,7 +42,7 @@ function csvCell(v) { return `"${String(v ?? '').replace(/"/g,'""')}"` }
 
 const emptyForm = () => ({
   id:'', title:'', description:'', bucket:'Sulfato ferroso', process:'I+D',
-  responsible:'Responsable por asignar', priority:'media', requestDate:todayISO(),
+  responsible:'Responsable por asignar', priority:'media', plant:'N/A', requestDate:todayISO(),
   dueDate:'', executionDate:''
 })
 
@@ -52,8 +53,12 @@ export default function App() {
   const [query, setQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState('todos')
   const [bucketFilter, setBucketFilter] = useState('todos')
+  const [plantFilter, setPlantFilter] = useState('todos')
   const [notice, setNotice] = useState('')
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [configPasswordOpen, setConfigPasswordOpen] = useState(false)
+  const [configPassword, setConfigPassword] = useState('')
+  const [configPasswordError, setConfigPasswordError] = useState('')
   const [newBucket, setNewBucket] = useState('')
   const [newProcess, setNewProcess] = useState('')
   const [newMember, setNewMember] = useState('')
@@ -81,9 +86,9 @@ export default function App() {
   }, [activities])
 
   const filtered = useMemo(() => activities.filter(a => {
-    const matchesQuery = `${a.title} ${a.description} ${a.responsible} ${a.bucket} ${a.process}`.toLowerCase().includes(query.toLowerCase())
-    return matchesQuery && (statusFilter === 'todos' || a.status === statusFilter) && (bucketFilter === 'todos' || a.bucket === bucketFilter)
-  }).sort((a,b) => (b.requestDate || '').localeCompare(a.requestDate || '')), [activities,query,statusFilter,bucketFilter])
+    const matchesQuery = `${a.title} ${a.description} ${a.responsible} ${a.bucket} ${a.process} ${a.plant || 'N/A'}`.toLowerCase().includes(query.toLowerCase())
+    return matchesQuery && (statusFilter === 'todos' || a.status === statusFilter) && (bucketFilter === 'todos' || a.bucket === bucketFilter) && (plantFilter === 'todos' || (a.plant || 'N/A') === plantFilter)
+  }).sort((a,b) => (b.requestDate || '').localeCompare(a.requestDate || '')), [activities,query,statusFilter,bucketFilter,plantFilter])
 
   const bucketStats = useMemo(() => store.buckets.map(bucket => {
     const list = activities.filter(a => a.bucket === bucket)
@@ -95,14 +100,17 @@ export default function App() {
     const names = [...new Set([...store.members,...activities.map(a=>a.responsible).filter(Boolean)])]
     return names.map(name => {
       const list = activities.filter(a=>a.responsible===name)
-      return {name,total:list.length,done:list.filter(a=>a.status==='finalizada').length,late:list.filter(a=>a.status==='retrasada').length,progress:list.filter(a=>a.status==='en_curso').length}
+      const completed = list.filter(a=>a.status==='finalizada')
+      const durations = completed.map(a=>diffDays(a.requestDate,a.executionDate)).filter(n=>n !== null && n >= 0)
+      const avgDays = durations.length ? Math.round(durations.reduce((sum,n)=>sum+n,0)/durations.length*10)/10 : null
+      return {name,total:list.length,done:completed.length,late:list.filter(a=>a.status==='retrasada').length,progress:list.filter(a=>a.status==='en_curso').length,avgDays}
     }).filter(m=>m.total).sort((a,b)=>b.total-a.total)
   },[store.members,activities])
 
   const upcoming = useMemo(() => activities.filter(a => !a.executionDate && a.dueDate).sort((a,b)=>a.dueDate.localeCompare(b.dueDate)).slice(0,5),[activities])
 
   function openNew() { setForm(emptyForm()); setFormOpen(true) }
-  function openEdit(a) { setForm({...a}); setFormOpen(true) }
+  function openEdit(a) { setForm({...a, plant:a.plant || 'N/A'}); setFormOpen(true) }
   function updateForm(key,value) { setForm(prev=>({...prev,[key]:value})) }
   function saveActivity(e) {
     e.preventDefault()
@@ -128,10 +136,10 @@ export default function App() {
   function exportCSV() {
     const cols = [
       ['Actividad','title'],['Descripción','description'],['Cubo','bucket'],['Proceso','process'],
-      ['Responsable','responsible'],['Prioridad','priority'],['Fecha solicitud','requestDate'],
+      ['Responsable','responsible'],['Planta','plant'],['Prioridad','priority'],['Fecha solicitud','requestDate'],
       ['Fecha límite','dueDate'],['Fecha ejecución','executionDate'],['Estado','status']
     ]
-    const lines = [cols.map(c=>csvCell(c[0])).join(';'),...filtered.map(a=>cols.map(([_,k])=>csvCell(k==='status'?statusLabels[a.status]:k==='priority'?priorityLabels[a[k]]:a[k])).join(';'))]
+    const lines = [cols.map(c=>csvCell(c[0])).join(';'),...filtered.map(a=>cols.map(([_,k])=>csvCell(k==='status'?statusLabels[a.status]:k==='priority'?priorityLabels[a[k]]:k==='plant'?(a.plant||'N/A'):a[k])).join(';'))]
     saveBlob(`actividades_${todayISO()}.csv`,'\ufeff'+lines.join('\r\n'),'text/csv;charset=utf-8;')
   }
   function backup() { saveBlob(`respaldo_tablero_${todayISO()}.json`,JSON.stringify(store,null,2),'application/json') }
@@ -155,9 +163,9 @@ export default function App() {
     <aside className="sidebar">
       <div className="brand"><div className="brand-mark"><Activity size={22}/></div><div><strong>Productividad</strong><span>Tablero de gestión</span></div></div>
       <div className="side-label">ESPACIO DE TRABAJO</div>
-      <div className="nav-item active"><Layers3 size={18}/> Resumen gerencial</div>
+      <div className="nav-item active"><Layers3 size={18}/> Resumen</div>
       <div className="nav-item" onClick={()=>document.getElementById('activity-list')?.scrollIntoView({behavior:'smooth'})}><CheckCircle2 size={18}/> Actividades</div>
-      <div className="nav-item" onClick={()=>setSettingsOpen(true)}><Archive size={18}/> Catálogos y respaldo</div>
+      <div className="nav-item" onClick={()=>{setConfigPassword('');setConfigPasswordError('');setConfigPasswordOpen(true)}}><Archive size={18}/> Configuración</div>
       <div className="sidebar-bottom"><div className="online-dot"/> Guardado local automático<span>Versión gratuita</span></div>
     </aside>
 
@@ -189,27 +197,28 @@ export default function App() {
         <div className="panel upcoming-panel">
           <div className="panel-heading"><div><h2>Próximas a vencer</h2><p>Actividades abiertas con fecha límite</p></div><CalendarClock size={19}/></div>
           {upcoming.length ? <div className="upcoming-list">{upcoming.map(a=><div className="upcoming-item" key={a.id}>
-            <div className={`due-icon ${a.status==='retrasada'?'late':''}`}><CalendarClock size={17}/></div><div className="upcoming-text"><strong>{a.title}</strong><span>{a.responsible} · {a.bucket}</span></div><div className="due-date"><strong>{fmtDate(a.dueDate)}</strong><span className={a.status==='retrasada'?'text-red':''}>{a.status==='retrasada'?`${Math.abs(diffDays(todayISO(),a.dueDate))} d de atraso`:a.dueDate===todayISO()?'Vence hoy':`Faltan ${diffDays(todayISO(),a.dueDate)} d`}</span></div>
+            <div className={`due-icon ${a.status==='retrasada'?'late':''}`}><CalendarClock size={17}/></div><div className="upcoming-text"><strong>{a.title}</strong><span>{a.responsible} · {a.bucket} · {a.plant || 'N/A'}</span></div><div className="due-date"><strong>{fmtDate(a.dueDate)}</strong><span className={a.status==='retrasada'?'text-red':''}>{a.status==='retrasada'?`${Math.abs(diffDays(todayISO(),a.dueDate))} d de atraso`:a.dueDate===todayISO()?'Vence hoy':`Faltan ${diffDays(todayISO(),a.dueDate)} d`}</span></div>
           </div>)}</div> : <Empty text="No hay actividades pendientes con fecha límite."/>}
         </div>
       </section>
 
       <section className="panel team-panel">
-        <div className="panel-heading"><div><h2>Productividad por responsable</h2><p>Distribución de actividades asignadas</p></div><Users size={19}/></div>
-        {memberStats.length ? <div className="table-wrap"><table><thead><tr><th>Responsable</th><th>Total</th><th>Finalizadas</th><th>En curso</th><th>Retrasadas</th><th>Cumplimiento</th></tr></thead><tbody>
-          {memberStats.map(m=><tr key={m.name}><td><div className="person-cell"><span className="avatar">{m.name.split(' ').map(s=>s[0]).join('').slice(0,2).toUpperCase()}</span><strong>{m.name}</strong></div></td><td>{m.total}</td><td><span className="status-pill done">{m.done}</span></td><td><span className="status-pill progress">{m.progress}</span></td><td><span className="status-pill late">{m.late}</span></td><td><div className="mini-progress"><div className="progress-track"><div className="progress-fill" style={{width:`${Math.round(m.done/m.total*100)}%`}}/></div><span>{Math.round(m.done/m.total*100)}%</span></div></td></tr>)}
+        <div className="panel-heading"><div><h2>Productividad por responsable</h2><p>Avance de tareas y días promedio desde la solicitud hasta el cierre</p></div><Users size={19}/></div>
+        {memberStats.length ? <div className="table-wrap"><table><thead><tr><th>Responsable</th><th>Total</th><th>Finalizadas</th><th>En curso</th><th>Retrasadas</th><th>Avance</th><th>Tiempo promedio de cierre</th></tr></thead><tbody>
+          {memberStats.map(m=><tr key={m.name}><td><div className="person-cell"><span className="avatar">{m.name.split(' ').map(s=>s[0]).join('').slice(0,2).toUpperCase()}</span><strong>{m.name}</strong></div></td><td>{m.total}</td><td><span className="status-pill done">{m.done}</span></td><td><span className="status-pill progress">{m.progress}</span></td><td><span className="status-pill late">{m.late}</span></td><td><div className="mini-progress"><div className="progress-track"><div className="progress-fill" style={{width:`${Math.round(m.done/m.total*100)}%`}}/></div><span>{Math.round(m.done/m.total*100)}%</span></div></td><td>{m.avgDays === null ? 'N/D' : `${m.avgDays} d`}</td></tr>)}
         </tbody></table></div> : <Empty text="La productividad por responsable aparecerá cuando registres actividades."/>}
       </section>
 
       <section className="panel activity-panel" id="activity-list">
         <div className="activity-heading"><div><h2>Registro de actividades</h2><p>Consulta, filtra y actualiza los compromisos del equipo.</p></div><div className="toolbar-actions"><button className="secondary" onClick={exportCSV}><Download size={16}/> Exportar CSV</button><button className="secondary" onClick={backup}><Archive size={16}/> Respaldo</button></div></div>
         <div className="filters">
-          <div className="search-box"><Search size={17}/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Buscar actividad, responsable, cubo..."/></div>
+          <div className="search-box"><Search size={17}/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Buscar actividad, responsable, planta, cubo..."/></div>
           <div className="select-wrap"><Filter size={15}/><select value={statusFilter} onChange={e=>setStatusFilter(e.target.value)}><option value="todos">Todos los estados</option><option value="en_curso">En curso</option><option value="retrasada">Retrasadas</option><option value="finalizada">Finalizadas</option></select></div>
           <select value={bucketFilter} onChange={e=>setBucketFilter(e.target.value)}><option value="todos">Todos los cubos</option>{store.buckets.map(b=><option key={b}>{b}</option>)}</select>
+          <select aria-label="Filtrar por planta" value={plantFilter} onChange={e=>setPlantFilter(e.target.value)}><option value="todos">Todas las plantas (sin filtro)</option>{plantOptions.map(plant=><option key={plant} value={plant}>{plant}</option>)}</select>
         </div>
-        {filtered.length ? <div className="table-wrap"><table className="activities-table"><thead><tr><th>Actividad</th><th>Cubo / proceso</th><th>Responsable</th><th>Prioridad</th><th>Fecha límite</th><th>Estado</th><th>Acciones</th></tr></thead><tbody>
-          {filtered.map(a=><tr key={a.id}><td className="activity-title-cell"><strong>{a.title}</strong>{a.description&&<span>{a.description}</span>}</td><td>{a.bucket}<small>{a.process}</small></td><td>{a.responsible}</td><td><span className={`priority ${a.priority}`}>{priorityLabels[a.priority]}</span></td><td>{fmtDate(a.dueDate)}</td><td><span className={`status-label ${a.status}`}>{statusLabels[a.status]}</span></td><td><div className="row-actions">{a.status!=='finalizada'&&<button title="Finalizar" onClick={()=>finish(a)}><CheckCircle2 size={16}/></button>}<button title="Editar" onClick={()=>openEdit(a)}><Pencil size={16}/></button><button title="Eliminar" onClick={()=>removeActivity(a)}><Trash2 size={16}/></button></div></td></tr>)}
+        {filtered.length ? <div className="table-wrap"><table className="activities-table"><thead><tr><th>Actividad</th><th>Planta</th><th>Cubo / proceso</th><th>Responsable</th><th>Prioridad</th><th>Fecha límite</th><th>Estado</th><th>Acciones</th></tr></thead><tbody>
+          {filtered.map(a=><tr key={a.id}><td className="activity-title-cell"><strong>{a.title}</strong>{a.description&&<span>{a.description}</span>}</td><td>{a.plant || 'N/A'}</td><td>{a.bucket}<small>{a.process}</small></td><td>{a.responsible}</td><td><span className={`priority ${a.priority}`}>{priorityLabels[a.priority]}</span></td><td>{fmtDate(a.dueDate)}</td><td><span className={`status-label ${a.status}`}>{statusLabels[a.status]}</span></td><td><div className="row-actions">{a.status!=='finalizada'&&<button title="Finalizar" onClick={()=>finish(a)}><CheckCircle2 size={16}/></button>}<button title="Editar" onClick={()=>openEdit(a)}><Pencil size={16}/></button><button title="Eliminar" onClick={()=>removeActivity(a)}><Trash2 size={16}/></button></div></td></tr>)}
         </tbody></table></div> : <div className="empty-table"><div className="empty-icon"><Activity size={22}/></div><strong>{activities.length?'No hay coincidencias':'Tu tablero está listo para empezar'}</strong><p>{activities.length?'Cambia los filtros o el término de búsqueda.':'Registra la primera actividad para comenzar a medir el cumplimiento.'}</p>{!activities.length&&<button className="primary" onClick={openNew}><Plus size={16}/> Registrar actividad</button>}</div>}
         <div className="table-footer"><span>{filtered.length} actividad(es) mostradas</span><span>Los estados se actualizan automáticamente según las fechas.</span></div>
       </section>
@@ -225,6 +234,7 @@ export default function App() {
           <label className="field">Cubo<select value={form.bucket} onChange={e=>updateForm('bucket',e.target.value)}>{store.buckets.map(x=><option key={x}>{x}</option>)}</select></label>
           <label className="field">Proceso<select value={form.process} onChange={e=>updateForm('process',e.target.value)}>{store.processes.map(x=><option key={x}>{x}</option>)}</select></label>
           <label className="field">Responsable<select value={form.responsible} onChange={e=>updateForm('responsible',e.target.value)}>{store.members.map(x=><option key={x}>{x}</option>)}</select></label>
+          <label className="field">Planta<select required value={form.plant || 'N/A'} onChange={e=>updateForm('plant',e.target.value)}>{plantOptions.map(x=><option key={x} value={x}>{x}</option>)}</select></label>
           <label className="field">Prioridad<select value={form.priority} onChange={e=>updateForm('priority',e.target.value)}><option value="alta">Alta</option><option value="media">Media</option><option value="baja">Baja</option></select></label>
           <label className="field">Fecha de solicitud<input type="date" required value={form.requestDate} onChange={e=>updateForm('requestDate',e.target.value)}/></label>
           <label className="field">Fecha límite<input type="date" value={form.dueDate||''} onChange={e=>updateForm('dueDate',e.target.value)}/></label>
@@ -234,8 +244,17 @@ export default function App() {
       </form>
     </div></div>}
 
+    {configPasswordOpen && <div className="modal-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget)setConfigPasswordOpen(false)}}><div className="modal" style={{maxWidth:420}}>
+      <div className="modal-head"><div><h2>Acceso a Configuración</h2><p>Ingresa la contraseña para administrar catálogos y respaldos.</p></div><button className="icon-button" onClick={()=>setConfigPasswordOpen(false)}><X size={19}/></button></div>
+      <form onSubmit={e=>{e.preventDefault();if(configPassword==='2410'){setConfigPasswordOpen(false);setSettingsOpen(true);setConfigPassword('');setConfigPasswordError('')}else{setConfigPasswordError('Contraseña incorrecta. Intenta nuevamente.');setConfigPassword('')}}}>
+        <label className="field full">Contraseña<input type="password" autoFocus required value={configPassword} onChange={e=>setConfigPassword(e.target.value)} placeholder="Ingresa la contraseña" autoComplete="current-password"/></label>
+        {configPasswordError && <p role="alert" style={{color:'#c4473a',fontSize:12,marginTop:10}}>{configPasswordError}</p>}
+        <div className="modal-actions"><button type="button" className="secondary" onClick={()=>setConfigPasswordOpen(false)}>Cancelar</button><button type="submit" className="primary"><LockKeyhole size={16}/> Acceder</button></div>
+      </form>
+    </div></div>}
+
     {settingsOpen && <div className="modal-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget)setSettingsOpen(false)}}><div className="modal settings-modal">
-      <div className="modal-head"><div><h2>Catálogos y respaldo</h2><p>Personaliza las opciones disponibles en el formulario.</p></div><button className="icon-button" onClick={()=>setSettingsOpen(false)}><X size={19}/></button></div>
+      <div className="modal-head"><div><h2>Configuración</h2><p>Personaliza las opciones disponibles en el formulario.</p></div><button className="icon-button" onClick={()=>setSettingsOpen(false)}><X size={19}/></button></div>
       <div className="catalog-section"><h3>Cubos de trabajo</h3><div className="catalog-list">{store.buckets.map(x=><span key={x}>{x}<button onClick={()=>{if(store.activities.some(a=>a.bucket===x)){setNotice('No puedes eliminar un cubo que tiene actividades.');return}setStore(p=>({...p,buckets:p.buckets.filter(y=>y!==x)}))}}><X size={13}/></button></span>)}</div><div className="inline-add"><input value={newBucket} onChange={e=>setNewBucket(e.target.value)} placeholder="Nuevo cubo"/><button className="secondary" onClick={()=>addCatalog('buckets',newBucket,setNewBucket)}><Plus size={15}/> Agregar</button></div></div>
       <div className="catalog-section"><h3>Procesos</h3><div className="catalog-list">{store.processes.map(x=><span key={x}>{x}<button onClick={()=>{if(store.activities.some(a=>a.process===x)){setNotice('No puedes eliminar un proceso que tiene actividades.');return}setStore(p=>({...p,processes:p.processes.filter(y=>y!==x)}))}}><X size={13}/></button></span>)}</div><div className="inline-add"><input value={newProcess} onChange={e=>setNewProcess(e.target.value)} placeholder="Nuevo proceso"/><button className="secondary" onClick={()=>addCatalog('processes',newProcess,setNewProcess)}><Plus size={15}/> Agregar</button></div></div>
       <div className="catalog-section"><h3>Responsables</h3><div className="catalog-list">{store.members.map(x=><span key={x}>{x}<button onClick={()=>{if(store.activities.some(a=>a.responsible===x)){setNotice('No puedes eliminar un responsable que tiene actividades.');return}setStore(p=>({...p,members:p.members.filter(y=>y!==x)}))}}><X size={13}/></button></span>)}</div><div className="inline-add"><input value={newMember} onChange={e=>setNewMember(e.target.value)} placeholder="Nombre del responsable"/><button className="secondary" onClick={()=>addCatalog('members',newMember,setNewMember)}><Plus size={15}/> Agregar</button></div></div>
