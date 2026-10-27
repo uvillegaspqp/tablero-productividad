@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react'
 import {
   Activity, AlertTriangle, Archive, CalendarClock, Check, CheckCircle2,
   Clock3, Download, FileUp, Filter, Layers3, Pencil, Plus, Search,
-  Trash2, Users, X, LockKeyhole
+  Trash2, Users, X, ListChecks, MessageSquare, Send, CalendarDays
 } from 'lucide-react'
 
 const STORE_KEY = 'tablero-productividad-v1'
@@ -42,8 +42,8 @@ function csvCell(v) { return `"${String(v ?? '').replace(/"/g,'""')}"` }
 
 const emptyForm = () => ({
   id:'', title:'', description:'', bucket:'Sulfato ferroso', process:'I+D',
-  responsible:'Responsable por asignar', priority:'media', plant:'N/A', requestDate:todayISO(),
-  dueDate:'', executionDate:''
+  responsible:'Responsable por asignar', priority:'media', requestDate:todayISO(),
+  dueDate:'', executionDate:'', plant:'N/A', checklist:[], updates:[]
 })
 
 export default function App() {
@@ -56,12 +56,11 @@ export default function App() {
   const [plantFilter, setPlantFilter] = useState('todos')
   const [notice, setNotice] = useState('')
   const [settingsOpen, setSettingsOpen] = useState(false)
-  const [configPasswordOpen, setConfigPasswordOpen] = useState(false)
-  const [configPassword, setConfigPassword] = useState('')
-  const [configPasswordError, setConfigPasswordError] = useState('')
   const [newBucket, setNewBucket] = useState('')
   const [newProcess, setNewProcess] = useState('')
   const [newMember, setNewMember] = useState('')
+  const [checklistInput, setChecklistInput] = useState('')
+  const [commentInput, setCommentInput] = useState('')
 
   useEffect(() => { localStorage.setItem(STORE_KEY, JSON.stringify(store)) }, [store])
   useEffect(() => {
@@ -86,8 +85,8 @@ export default function App() {
   }, [activities])
 
   const filtered = useMemo(() => activities.filter(a => {
-    const matchesQuery = `${a.title} ${a.description} ${a.responsible} ${a.bucket} ${a.process} ${a.plant || 'N/A'}`.toLowerCase().includes(query.toLowerCase())
-    return matchesQuery && (statusFilter === 'todos' || a.status === statusFilter) && (bucketFilter === 'todos' || a.bucket === bucketFilter) && (plantFilter === 'todos' || (a.plant || 'N/A') === plantFilter)
+    const matchesQuery = `${a.title} ${a.description} ${a.responsible} ${a.bucket} ${a.process} ${a.plant||'N/A'} ${(a.checklist||[]).map(i=>i.text).join(' ')} ${(a.updates||[]).map(u=>u.text).join(' ')}`.toLowerCase().includes(query.toLowerCase())
+    return matchesQuery && (statusFilter === 'todos' || a.status === statusFilter) && (bucketFilter === 'todos' || a.bucket === bucketFilter) && (plantFilter === 'todos' || plantFilter === 'TODAS' || a.plant === plantFilter)
   }).sort((a,b) => (b.requestDate || '').localeCompare(a.requestDate || '')), [activities,query,statusFilter,bucketFilter,plantFilter])
 
   const bucketStats = useMemo(() => store.buckets.map(bucket => {
@@ -100,22 +99,54 @@ export default function App() {
     const names = [...new Set([...store.members,...activities.map(a=>a.responsible).filter(Boolean)])]
     return names.map(name => {
       const list = activities.filter(a=>a.responsible===name)
-      const completed = list.filter(a=>a.status==='finalizada')
-      const durations = completed.map(a=>diffDays(a.requestDate,a.executionDate)).filter(n=>n !== null && n >= 0)
-      const avgDays = durations.length ? Math.round(durations.reduce((sum,n)=>sum+n,0)/durations.length*10)/10 : null
-      return {name,total:list.length,done:completed.length,late:list.filter(a=>a.status==='retrasada').length,progress:list.filter(a=>a.status==='en_curso').length,avgDays}
+      return {name,total:list.length,done:list.filter(a=>a.status==='finalizada').length,late:list.filter(a=>a.status==='retrasada').length,progress:list.filter(a=>a.status==='en_curso').length}
     }).filter(m=>m.total).sort((a,b)=>b.total-a.total)
   },[store.members,activities])
 
   const upcoming = useMemo(() => activities.filter(a => !a.executionDate && a.dueDate).sort((a,b)=>a.dueDate.localeCompare(b.dueDate)).slice(0,5),[activities])
 
-  function openNew() { setForm(emptyForm()); setFormOpen(true) }
-  function openEdit(a) { setForm({...a, plant:a.plant || 'N/A'}); setFormOpen(true) }
+  function openNew() {
+    setForm(emptyForm())
+    setChecklistInput('')
+    setCommentInput('')
+    setFormOpen(true)
+  }
+  function openEdit(a) {
+    setForm({...a, checklist:Array.isArray(a.checklist)?a.checklist:[], updates:Array.isArray(a.updates)?a.updates:[]})
+    setChecklistInput('')
+    setCommentInput('')
+    setFormOpen(true)
+  }
+  function addChecklistItem() {
+    const text = checklistInput.trim()
+    if (!text) return
+    setForm(prev => ({...prev, checklist:[...(prev.checklist || []), {id:`${Date.now()}-${Math.random().toString(16).slice(2)}`, text, done:false}]}))
+    setChecklistInput('')
+  }
+  function toggleChecklistItem(id) {
+    setForm(prev => ({...prev, checklist:(prev.checklist || []).map(item => item.id===id ? {...item, done:!item.done} : item)}))
+  }
+  function removeChecklistItem(id) {
+    setForm(prev => ({...prev, checklist:(prev.checklist || []).filter(item => item.id!==id)}))
+  }
+  function addActivityUpdate() {
+    const text = commentInput.trim()
+    if (!text) return
+    const update = {id:`${Date.now()}-${Math.random().toString(16).slice(2)}`, text, createdAt:new Date().toISOString()}
+    setForm(prev => ({...prev, updates:[...(prev.updates || []), update]}))
+    setCommentInput('')
+  }
   function updateForm(key,value) { setForm(prev=>({...prev,[key]:value})) }
   function saveActivity(e) {
     e.preventDefault()
     if (!form.title.trim()) return
-    const activity = {...form, id:form.id || `${Date.now()}-${Math.random().toString(16).slice(2)}`, title:form.title.trim()}
+    const activity = {
+      ...form,
+      id:form.id || `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      title:form.title.trim(),
+      checklist:Array.isArray(form.checklist) ? form.checklist : [],
+      updates:Array.isArray(form.updates) ? form.updates : []
+    }
     setStore(prev => ({
       ...prev,
       members: prev.members.includes(activity.responsible) ? prev.members : [...prev.members,activity.responsible],
@@ -136,10 +167,10 @@ export default function App() {
   function exportCSV() {
     const cols = [
       ['Actividad','title'],['Descripción','description'],['Cubo','bucket'],['Proceso','process'],
-      ['Responsable','responsible'],['Planta','plant'],['Prioridad','priority'],['Fecha solicitud','requestDate'],
-      ['Fecha límite','dueDate'],['Fecha ejecución','executionDate'],['Estado','status']
+      ['Responsable','responsible'],['Prioridad','priority'],['Fecha solicitud','requestDate'],
+      ['Fecha límite','dueDate'],['Fecha ejecución','executionDate'],['Planta','plant'],['Lista de verificación','checklist'],['Seguimientos','updates'],['Estado','status']
     ]
-    const lines = [cols.map(c=>csvCell(c[0])).join(';'),...filtered.map(a=>cols.map(([_,k])=>csvCell(k==='status'?statusLabels[a.status]:k==='priority'?priorityLabels[a[k]]:k==='plant'?(a.plant||'N/A'):a[k])).join(';'))]
+    const lines = [cols.map(c=>csvCell(c[0])).join(';'),...filtered.map(a=>cols.map(([_,k])=>csvCell(k==='status'?statusLabels[a.status]:k==='priority'?priorityLabels[a[k]]:k==='checklist'?(a.checklist||[]).map(i=>`${i.done?'[x]':'[ ]'} ${i.text}`).join(' | '):k==='updates'?(a.updates||[]).map(u=>`${new Date(u.createdAt).toLocaleString('es-CO')}: ${u.text}`).join(' | '):a[k])).join(';'))]
     saveBlob(`actividades_${todayISO()}.csv`,'\ufeff'+lines.join('\r\n'),'text/csv;charset=utf-8;')
   }
   function backup() { saveBlob(`respaldo_tablero_${todayISO()}.json`,JSON.stringify(store,null,2),'application/json') }
@@ -153,6 +184,11 @@ export default function App() {
     }catch{setNotice('No se pudo importar el archivo. Verifica que sea un respaldo JSON del tablero.')}}
     reader.readAsText(file); e.target.value=''
   }
+  function openConfiguration() {
+    const entered = window.prompt('Ingresa la contraseña para acceder a Configuración:')
+    if (entered === '2410') setSettingsOpen(true)
+    else if (entered !== null) setNotice('Contraseña incorrecta.')
+  }
   function addCatalog(type,value,setter) {
     const clean=value.trim(); if(!clean) return
     setStore(prev=>prev[type].includes(clean)?prev:{...prev,[type]:[...prev[type],clean]})
@@ -165,7 +201,7 @@ export default function App() {
       <div className="side-label">ESPACIO DE TRABAJO</div>
       <div className="nav-item active"><Layers3 size={18}/> Resumen</div>
       <div className="nav-item" onClick={()=>document.getElementById('activity-list')?.scrollIntoView({behavior:'smooth'})}><CheckCircle2 size={18}/> Actividades</div>
-      <div className="nav-item" onClick={()=>{setConfigPassword('');setConfigPasswordError('');setConfigPasswordOpen(true)}}><Archive size={18}/> Configuración</div>
+      <div className="nav-item" onClick={openConfiguration}><Archive size={18}/> Configuración</div>
       <div className="sidebar-bottom"><div className="online-dot"/> Guardado local automático<span>Versión gratuita</span></div>
     </aside>
 
@@ -197,28 +233,27 @@ export default function App() {
         <div className="panel upcoming-panel">
           <div className="panel-heading"><div><h2>Próximas a vencer</h2><p>Actividades abiertas con fecha límite</p></div><CalendarClock size={19}/></div>
           {upcoming.length ? <div className="upcoming-list">{upcoming.map(a=><div className="upcoming-item" key={a.id}>
-            <div className={`due-icon ${a.status==='retrasada'?'late':''}`}><CalendarClock size={17}/></div><div className="upcoming-text"><strong>{a.title}</strong><span>{a.responsible} · {a.bucket} · {a.plant || 'N/A'}</span></div><div className="due-date"><strong>{fmtDate(a.dueDate)}</strong><span className={a.status==='retrasada'?'text-red':''}>{a.status==='retrasada'?`${Math.abs(diffDays(todayISO(),a.dueDate))} d de atraso`:a.dueDate===todayISO()?'Vence hoy':`Faltan ${diffDays(todayISO(),a.dueDate)} d`}</span></div>
+            <div className={`due-icon ${a.status==='retrasada'?'late':''}`}><CalendarClock size={17}/></div><div className="upcoming-text"><strong>{a.title}</strong><span>{a.responsible} · {a.bucket}</span></div><div className="due-date"><strong>{fmtDate(a.dueDate)}</strong><span className={a.status==='retrasada'?'text-red':''}>{a.status==='retrasada'?`${Math.abs(diffDays(todayISO(),a.dueDate))} d de atraso`:a.dueDate===todayISO()?'Vence hoy':`Faltan ${diffDays(todayISO(),a.dueDate)} d`}</span></div>
           </div>)}</div> : <Empty text="No hay actividades pendientes con fecha límite."/>}
         </div>
       </section>
 
       <section className="panel team-panel">
-        <div className="panel-heading"><div><h2>Productividad por responsable</h2><p>Avance de tareas y días promedio desde la solicitud hasta el cierre</p></div><Users size={19}/></div>
-        {memberStats.length ? <div className="table-wrap"><table><thead><tr><th>Responsable</th><th>Total</th><th>Finalizadas</th><th>En curso</th><th>Retrasadas</th><th>Avance</th><th>Tiempo promedio de cierre</th></tr></thead><tbody>
-          {memberStats.map(m=><tr key={m.name}><td><div className="person-cell"><span className="avatar">{m.name.split(' ').map(s=>s[0]).join('').slice(0,2).toUpperCase()}</span><strong>{m.name}</strong></div></td><td>{m.total}</td><td><span className="status-pill done">{m.done}</span></td><td><span className="status-pill progress">{m.progress}</span></td><td><span className="status-pill late">{m.late}</span></td><td><div className="mini-progress"><div className="progress-track"><div className="progress-fill" style={{width:`${Math.round(m.done/m.total*100)}%`}}/></div><span>{Math.round(m.done/m.total*100)}%</span></div></td><td>{m.avgDays === null ? 'N/D' : `${m.avgDays} d`}</td></tr>)}
+        <div className="panel-heading"><div><h2>Productividad por responsable</h2><p>Distribución de actividades asignadas</p></div><Users size={19}/></div>
+        {memberStats.length ? <div className="table-wrap"><table><thead><tr><th>Responsable</th><th>Total</th><th>Finalizadas</th><th>En curso</th><th>Retrasadas</th><th>Cumplimiento</th></tr></thead><tbody>
+          {memberStats.map(m=><tr key={m.name}><td><div className="person-cell"><span className="avatar">{m.name.split(' ').map(s=>s[0]).join('').slice(0,2).toUpperCase()}</span><strong>{m.name}</strong></div></td><td>{m.total}</td><td><span className="status-pill done">{m.done}</span></td><td><span className="status-pill progress">{m.progress}</span></td><td><span className="status-pill late">{m.late}</span></td><td><div className="mini-progress"><div className="progress-track"><div className="progress-fill" style={{width:`${Math.round(m.done/m.total*100)}%`}}/></div><span>{Math.round(m.done/m.total*100)}%</span></div></td></tr>)}
         </tbody></table></div> : <Empty text="La productividad por responsable aparecerá cuando registres actividades."/>}
       </section>
 
       <section className="panel activity-panel" id="activity-list">
         <div className="activity-heading"><div><h2>Registro de actividades</h2><p>Consulta, filtra y actualiza los compromisos del equipo.</p></div><div className="toolbar-actions"><button className="secondary" onClick={exportCSV}><Download size={16}/> Exportar CSV</button><button className="secondary" onClick={backup}><Archive size={16}/> Respaldo</button></div></div>
         <div className="filters">
-          <div className="search-box"><Search size={17}/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Buscar actividad, responsable, planta, cubo..."/></div>
+          <div className="search-box"><Search size={17}/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Buscar actividad, responsable, cubo..."/></div>
           <div className="select-wrap"><Filter size={15}/><select value={statusFilter} onChange={e=>setStatusFilter(e.target.value)}><option value="todos">Todos los estados</option><option value="en_curso">En curso</option><option value="retrasada">Retrasadas</option><option value="finalizada">Finalizadas</option></select></div>
-          <select value={bucketFilter} onChange={e=>setBucketFilter(e.target.value)}><option value="todos">Todos los cubos</option>{store.buckets.map(b=><option key={b}>{b}</option>)}</select>
-          <select aria-label="Filtrar por planta" value={plantFilter} onChange={e=>setPlantFilter(e.target.value)}><option value="todos">Todas las plantas (sin filtro)</option>{plantOptions.map(plant=><option key={plant} value={plant}>{plant}</option>)}</select>
+          <select value={bucketFilter} onChange={e=>setBucketFilter(e.target.value)}><option value="todos">Todos los cubos</option>{store.buckets.map(b=><option key={b}>{b}</option>)}</select><select value={plantFilter} onChange={e=>setPlantFilter(e.target.value)} aria-label="Filtrar por planta"><option value="todos">Todas las plantas</option>{plantOptions.map(p=><option key={p} value={p}>{p}</option>)}</select>
         </div>
-        {filtered.length ? <div className="table-wrap"><table className="activities-table"><thead><tr><th>Actividad</th><th>Planta</th><th>Cubo / proceso</th><th>Responsable</th><th>Prioridad</th><th>Fecha límite</th><th>Estado</th><th>Acciones</th></tr></thead><tbody>
-          {filtered.map(a=><tr key={a.id}><td className="activity-title-cell"><strong>{a.title}</strong>{a.description&&<span>{a.description}</span>}</td><td>{a.plant || 'N/A'}</td><td>{a.bucket}<small>{a.process}</small></td><td>{a.responsible}</td><td><span className={`priority ${a.priority}`}>{priorityLabels[a.priority]}</span></td><td>{fmtDate(a.dueDate)}</td><td><span className={`status-label ${a.status}`}>{statusLabels[a.status]}</span></td><td><div className="row-actions">{a.status!=='finalizada'&&<button title="Finalizar" onClick={()=>finish(a)}><CheckCircle2 size={16}/></button>}<button title="Editar" onClick={()=>openEdit(a)}><Pencil size={16}/></button><button title="Eliminar" onClick={()=>removeActivity(a)}><Trash2 size={16}/></button></div></td></tr>)}
+        {filtered.length ? <div className="table-wrap"><table className="activities-table"><thead><tr><th>Actividad</th><th>Cubo / proceso</th><th>Responsable</th><th>Planta</th><th>Prioridad</th><th>Fecha límite</th><th>Estado</th><th>Acciones</th></tr></thead><tbody>
+          {filtered.map(a=><tr key={a.id}><td className="activity-title-cell"><strong>{a.title}</strong>{a.description&&<span>{a.description}</span>}{(a.checklist||[]).length>0&&<span>Lista: {(a.checklist||[]).filter(i=>i.done).length}/{a.checklist.length} completados</span>}{(a.updates||[]).length>0&&<span>{a.updates.length} actualización(es)</span>}</td><td>{a.bucket}<small>{a.process}</small></td><td>{a.responsible}</td><td>{a.plant || 'N/A'}</td><td><span className={`priority ${a.priority}`}>{priorityLabels[a.priority]}</span></td><td>{fmtDate(a.dueDate)}</td><td><span className={`status-label ${a.status}`}>{statusLabels[a.status]}</span></td><td><div className="row-actions">{a.status!=='finalizada'&&<button title="Finalizar" onClick={()=>finish(a)}><CheckCircle2 size={16}/></button>}<button title="Editar" onClick={()=>openEdit(a)}><Pencil size={16}/></button><button title="Eliminar" onClick={()=>removeActivity(a)}><Trash2 size={16}/></button></div></td></tr>)}
         </tbody></table></div> : <div className="empty-table"><div className="empty-icon"><Activity size={22}/></div><strong>{activities.length?'No hay coincidencias':'Tu tablero está listo para empezar'}</strong><p>{activities.length?'Cambia los filtros o el término de búsqueda.':'Registra la primera actividad para comenzar a medir el cumplimiento.'}</p>{!activities.length&&<button className="primary" onClick={openNew}><Plus size={16}/> Registrar actividad</button>}</div>}
         <div className="table-footer"><span>{filtered.length} actividad(es) mostradas</span><span>Los estados se actualizan automáticamente según las fechas.</span></div>
       </section>
@@ -234,22 +269,33 @@ export default function App() {
           <label className="field">Cubo<select value={form.bucket} onChange={e=>updateForm('bucket',e.target.value)}>{store.buckets.map(x=><option key={x}>{x}</option>)}</select></label>
           <label className="field">Proceso<select value={form.process} onChange={e=>updateForm('process',e.target.value)}>{store.processes.map(x=><option key={x}>{x}</option>)}</select></label>
           <label className="field">Responsable<select value={form.responsible} onChange={e=>updateForm('responsible',e.target.value)}>{store.members.map(x=><option key={x}>{x}</option>)}</select></label>
-          <label className="field">Planta<select required value={form.plant || 'N/A'} onChange={e=>updateForm('plant',e.target.value)}>{plantOptions.map(x=><option key={x} value={x}>{x}</option>)}</select></label>
+          <label className="field">Planta<select value={form.plant || 'N/A'} onChange={e=>updateForm('plant',e.target.value)}>{plantOptions.map(x=><option key={x} value={x}>{x}</option>)}</select></label>
           <label className="field">Prioridad<select value={form.priority} onChange={e=>updateForm('priority',e.target.value)}><option value="alta">Alta</option><option value="media">Media</option><option value="baja">Baja</option></select></label>
           <label className="field">Fecha de solicitud<input type="date" required value={form.requestDate} onChange={e=>updateForm('requestDate',e.target.value)}/></label>
           <label className="field">Fecha límite<input type="date" value={form.dueDate||''} onChange={e=>updateForm('dueDate',e.target.value)}/></label>
           <label className="field full">Fecha de ejecución (dejar vacía si sigue abierta)<input type="date" value={form.executionDate||''} onChange={e=>updateForm('executionDate',e.target.value)}/></label>
         </div>
+        <section className="activity-extra-section">
+          <div className="extra-heading"><ListChecks size={18}/><div><h3>Lista de verificación</h3><p>Divide la actividad en pasos y marca cada uno al completarlo.</p></div></div>
+          <div className="inline-add checklist-add">
+            <input value={checklistInput} onChange={e=>setChecklistInput(e.target.value)} placeholder="Escribe un paso y presiona Agregar" onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();addChecklistItem()}}}/>
+            <button type="button" className="secondary" onClick={addChecklistItem}><Plus size={15}/> Agregar</button>
+          </div>
+          {(form.checklist||[]).length ? <div className="checklist-items">{form.checklist.map(item=><div className={`checklist-item ${item.done?'checked':''}`} key={item.id}>
+            <label><input type="checkbox" checked={!!item.done} onChange={()=>toggleChecklistItem(item.id)}/><span>{item.text}</span></label>
+            <button type="button" className="icon-button" aria-label="Eliminar paso" onClick={()=>removeChecklistItem(item.id)}><X size={14}/></button>
+          </div>)}
+          <div className="checklist-progress"><div className="progress-track"><div className="progress-fill" style={{width:`${form.checklist.length?Math.round(form.checklist.filter(i=>i.done).length/form.checklist.length*100):0}%`}}/></div><span>{form.checklist.filter(i=>i.done).length} de {form.checklist.length} completados ({form.checklist.length?Math.round(form.checklist.filter(i=>i.done).length/form.checklist.length*100):0}%)</span></div></div> : <p className="helper-text">Todavía no hay pasos. Puedes guardar la actividad sin una lista de verificación.</p>}
+        </section>
+        <section className="activity-extra-section">
+          <div className="extra-heading"><MessageSquare size={18}/><div><h3>Comentarios y seguimiento</h3><p>Registra avances, decisiones, novedades o bloqueos dentro de esta actividad.</p></div></div>
+          <div className="comment-compose">
+            <textarea value={commentInput} onChange={e=>setCommentInput(e.target.value)} rows="2" placeholder="Escribe una actualización o comentario..."/>
+            <button type="button" className="secondary" onClick={addActivityUpdate} disabled={!commentInput.trim()}><Send size={15}/> Añadir seguimiento</button>
+          </div>
+          {(form.updates||[]).length ? <div className="updates-list">{[...(form.updates||[])].reverse().map(update=><article className="update-item" key={update.id}><div className="update-dot"><MessageSquare size={14}/></div><div className="update-body"><div className="update-meta"><strong>Seguimiento</strong><time>{new Date(update.createdAt).toLocaleString('es-CO',{dateStyle:'medium',timeStyle:'short'})}</time></div><p>{update.text}</p></div></article>)}</div> : <p className="helper-text">Aún no hay comentarios. Los seguimientos se guardarán junto con la actividad.</p>}
+        </section>
         <div className="modal-actions"><button type="button" className="secondary" onClick={()=>setFormOpen(false)}>Cancelar</button><button type="submit" className="primary"><Check size={16}/> Guardar actividad</button></div>
-      </form>
-    </div></div>}
-
-    {configPasswordOpen && <div className="modal-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget)setConfigPasswordOpen(false)}}><div className="modal" style={{maxWidth:420}}>
-      <div className="modal-head"><div><h2>Acceso a Configuración</h2><p>Ingresa la contraseña para administrar catálogos y respaldos.</p></div><button className="icon-button" onClick={()=>setConfigPasswordOpen(false)}><X size={19}/></button></div>
-      <form onSubmit={e=>{e.preventDefault();if(configPassword==='2410'){setConfigPasswordOpen(false);setSettingsOpen(true);setConfigPassword('');setConfigPasswordError('')}else{setConfigPasswordError('Contraseña incorrecta. Intenta nuevamente.');setConfigPassword('')}}}>
-        <label className="field full">Contraseña<input type="password" autoFocus required value={configPassword} onChange={e=>setConfigPassword(e.target.value)} placeholder="Ingresa la contraseña" autoComplete="current-password"/></label>
-        {configPasswordError && <p role="alert" style={{color:'#c4473a',fontSize:12,marginTop:10}}>{configPasswordError}</p>}
-        <div className="modal-actions"><button type="button" className="secondary" onClick={()=>setConfigPasswordOpen(false)}>Cancelar</button><button type="submit" className="primary"><LockKeyhole size={16}/> Acceder</button></div>
       </form>
     </div></div>}
 

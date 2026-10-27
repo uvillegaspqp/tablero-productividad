@@ -4,14 +4,14 @@ Aplicación web React + Vite para registrar y dar seguimiento a actividades. Est
 
 ## Funciones
 - Crear, editar y eliminar actividades.
+- Crear listas de verificación dentro de cada actividad, marcar pasos completados y consultar el avance.
+- Registrar comentarios y seguimientos con fecha y hora dentro de cada actividad; se conservan al guardar y editar.
 - Estados automáticos: En curso, Retrasada y Finalizada.
 - Indicadores de actividades, cumplimiento, puntualidad y promedio de cierre.
 - Seguimiento por cubo y responsable.
 - Próximas actividades a vencer.
 - Búsqueda y filtros por estado, cubo y planta.
-- Selección de planta en cada actividad: PL BARRANQUILLA, PL MUÑA, PL JAMUNDÍ, PL GIRARDOTA, TODAS o N/A.
-- Indicadores de avance y tiempo promedio de cierre por responsable.
-- Acceso con contraseña a Configuración.
+- Selección de planta: PL BARRANQUILLA, PL MUÑA, PL JAMUNDÍ, PL GIRARDOTA, TODAS y N/A.
 - Exportación CSV compatible con Excel.
 - Exportar e importar una copia de seguridad JSON.
 
@@ -34,8 +34,6 @@ Aplicación web React + Vite para registrar y dar seguimiento a actividades. Est
    - Build command: `npm run build`
    - Publish directory: `dist`
 5. Pulsar **Deploy**. Netlify generará una URL pública HTTPS.
-
-Nota: la contraseña de Configuración está validada en el cliente; sirve como barrera de interfaz, pero no es un mecanismo de seguridad robusto para información sensible.
 
 También se puede publicar en Vercel o Cloudflare Pages usando `npm run build` y la carpeta `dist`.
 
