@@ -70,7 +70,20 @@ export default function App() {
   const [newProcess, setNewProcess] = useState('')
   const [newMember, setNewMember] = useState('')
   const [activeView, setActiveView] = useState('resumen');
+function navigateTo(view) {
+  setActiveView(view);
 
+  if (view === 'resumen') {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  if (view === 'actividades') {
+    document.getElementById('activity-list')?.scrollIntoView({
+      behavior: 'smooth',
+      block: 'start'
+    });
+  }
+}
   useEffect(() => { localStorage.setItem(STORE_KEY, JSON.stringify(store)) }, [store])
   useEffect(() => {
     if (!notice) return
