@@ -74,7 +74,10 @@ function navigateTo(view) {
   setActiveView(view);
 
   if (view === 'resumen') {
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    document.querySelector('.topbar')?.scrollIntoView({
+      behavior: 'smooth',
+      block: 'start'
+    });
   }
 
   if (view === 'actividades') {
