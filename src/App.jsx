@@ -287,7 +287,7 @@ export default function App() {
 
   return <div className="app-shell">
     <aside className="sidebar">
-      <div className="brand"><div className="brand-mark"><Activity size={22}/></div><div><strong>Productividad</strong><span>Tablero de gestión</span></div></div>
+      <div className="brand"><div className="brand-mark"><Activity size={22}/></div><div><strong>Productividad I+D</strong><span>Tablero de gestión</span></div></div>
       <div className="side-label">ESPACIO DE TRABAJO</div>
       <div className="nav-item active"><Layers3 size={18}/> Resumen</div>
       <div className="nav-item" onClick={()=>document.getElementById('activity-list')?.scrollIntoView({behavior:'smooth'})}><CheckCircle2 size={18}/> Actividades</div>
