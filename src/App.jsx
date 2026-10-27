@@ -1,4 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react'
+import html2canvas from 'html2canvas'
+import { jsPDF } from 'jspdf'
+import pptxgen from 'pptxgenjs'
 import {
   Activity, AlertTriangle, Archive, CalendarClock, Check, CheckCircle2,
   Clock3, Download, FileUp, Filter, Layers3, Pencil, Plus, Search,
@@ -57,6 +60,8 @@ export default function App() {
   const [bucketFilter, setBucketFilter] = useState('todos')
   const [plantFilter, setPlantFilter] = useState('todos')
   const [notice, setNotice] = useState('')
+  const [reportMenuOpen, setReportMenuOpen] = useState(false)
+  const [reporting, setReporting] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [configPasswordOpen, setConfigPasswordOpen] = useState(false)
   const [configPassword, setConfigPassword] = useState('')
@@ -167,6 +172,93 @@ export default function App() {
     setStore(prev=>({...prev,activities:prev.activities.filter(x=>x.id!==a.id)}))
     setNotice('Actividad eliminada.')
   }
+  async function exportReport(format) {
+    if (reporting) return
+    setReporting(true)
+    setReportMenuOpen(false)
+    setNotice('Generando reporte. No cierres esta pestaña…')
+    const selectors = ['.topbar', '.kpi-grid', '.close-time-grid', '.overview-grid', '.team-panel', '.activity-panel']
+    const pages = []
+    const originalMain = document.querySelector('.main')
+    try {
+      // Captura cada bloque principal como una diapositiva/página, conservando la información visible.
+      document.body.classList.add('report-exporting')
+      await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+      for (const selector of selectors) {
+        const element = document.querySelector(selector)
+        if (!element) continue
+        const canvas = await html2canvas(element, {
+          scale: 2,
+          backgroundColor: '#f4f7f8',
+          useCORS: true,
+          logging: false,
+          windowWidth: Math.max(document.documentElement.clientWidth, element.scrollWidth),
+          onclone: clonedDoc => {
+            clonedDoc.body.classList.add('report-exporting')
+            const cloned = clonedDoc.querySelector(selector)
+            if (cloned) {
+              cloned.style.width = `${Math.max(element.scrollWidth, element.getBoundingClientRect().width)}px`
+              cloned.style.maxWidth = 'none'
+              cloned.style.overflow = 'visible'
+            }
+          }
+        })
+        pages.push({ data: canvas.toDataURL('image/png'), width: canvas.width, height: canvas.height, title: ({'.topbar':'Resumen ejecutivo','.kpi-grid':'Indicadores generales','.close-time-grid':'Tiempo promedio de cierre','.overview-grid':'Avance por cubo y próximas a vencer','.team-panel':'Productividad por responsable','.activity-panel':'Registro de actividades'})[selector] || 'Reporte' })
+      }
+      if (!pages.length) throw new Error('No se encontraron secciones del tablero para exportar.')
+      const date = todayISO()
+      if (format === 'pdf') {
+        const pdf = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4', compress: true })
+        const pageW = pdf.internal.pageSize.getWidth()
+        const pageH = pdf.internal.pageSize.getHeight()
+        pages.forEach((page, index) => {
+          if (index) pdf.addPage('a4', 'landscape')
+          const margin = 24
+          const titleH = 22
+          const maxW = pageW - margin * 2
+          const maxH = pageH - margin * 2 - titleH
+          const ratio = Math.min(maxW / page.width, maxH / page.height)
+          const w = page.width * ratio
+          const h = page.height * ratio
+          pdf.setFont('helvetica', 'bold')
+          pdf.setFontSize(10)
+          pdf.setTextColor(35, 65, 76)
+          pdf.text(page.title, margin, margin + 10)
+          pdf.addImage(page.data, 'PNG', (pageW - w) / 2, margin + titleH, w, h, undefined, 'FAST')
+        })
+        pdf.save(`reporte_tablero_productividad_${date}.pdf`)
+      } else {
+        const pptx = new pptxgen()
+        pptx.layout = 'LAYOUT_WIDE'
+        pptx.author = 'Tablero de productividad'
+        pptx.subject = 'Reporte de indicadores y actividades'
+        pptx.title = 'Reporte del tablero de productividad'
+        pptx.company = 'Tablero de productividad'
+        pptx.lang = 'es-CO'
+        pages.forEach(page => {
+          const slide = pptx.addSlide()
+          slide.background = { color: 'F4F7F8' }
+          slide.addText(page.title, { x: 0.35, y: 0.16, w: 12.6, h: 0.35, fontFace: 'Aptos Display', fontSize: 16, bold: true, color: '23414C', margin: 0 })
+          const maxW = 12.55
+          const maxH = 6.75
+          const ratio = Math.min(maxW / page.width, maxH / page.height)
+          const w = page.width * ratio
+          const h = page.height * ratio
+          slide.addImage({ data: page.data, x: (13.333 - w) / 2, y: 0.62 + (6.75 - h) / 2, w, h })
+          slide.addText(`Generado el ${fmtDate(date)} · Tablero de productividad`, { x: 0.35, y: 7.22, w: 12.6, h: 0.15, fontSize: 7, color: '718096', margin: 0, align: 'right' })
+        })
+        await pptx.writeFile({ fileName: `reporte_tablero_productividad_${date}.pptx` })
+      }
+      setNotice(`Reporte ${format.toUpperCase()} generado.`)
+    } catch (error) {
+      console.error('Error al generar el reporte:', error)
+      setNotice('No se pudo generar el reporte. Intenta nuevamente o usa un navegador actualizado.')
+    } finally {
+      document.body.classList.remove('report-exporting')
+      setReporting(false)
+    }
+  }
+
   function exportCSV() {
     const cols = [
       ['Actividad','title'],['Descripción','description'],['Cubo','bucket'],['Proceso','process'],
@@ -206,7 +298,16 @@ export default function App() {
     <main className="main">
       <header className="topbar">
         <div><div className="eyebrow">{new Date().toLocaleDateString('es-CO',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}</div><h1>Tablero de productividad</h1><p>Resumen de actividades, plazos y desempeño del equipo.</p></div>
-        <button className="primary" onClick={openNew}><Plus size={17}/> Nueva actividad</button>
+        <div className="topbar-actions">
+          <div className="report-menu-wrap">
+            <button className="secondary report-button" onClick={()=>setReportMenuOpen(open=>!open)} disabled={reporting}><Download size={16}/>{reporting ? 'Generando…' : 'Imprimir reporte'}</button>
+            {reportMenuOpen && <div className="report-menu">
+              <button onClick={()=>exportReport('pptx')}><FileUp size={16}/><span><strong>PowerPoint</strong><small>Una diapositiva por sección</small></span></button>
+              <button onClick={()=>exportReport('pdf')}><Download size={16}/><span><strong>PDF</strong><small>Páginas apaisadas tipo diapositiva</small></span></button>
+            </div>}
+          </div>
+          <button className="primary" onClick={openNew}><Plus size={17}/> Nueva actividad</button>
+        </div>
       </header>
 
       {notice && <div className="notice"><Check size={16}/>{notice}<button onClick={()=>setNotice('')}><X size={15}/></button></div>}
