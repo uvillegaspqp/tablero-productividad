@@ -308,25 +308,23 @@ function navigateTo(view) {
     <span>Tablero de gestión</span>
   </div>
 </div>
+
 <div className="side-label">ESPACIO DE TRABAJO</div>
 
 <div
   className={`nav-item ${activeView === 'resumen' ? 'active' : ''}`}
-  onClick={() => setActiveView('resumen')}
+  onClick={() => navigateTo('resumen')}
 >
-  <Layers3 size={18} /> Resumen
+  <Layers3 size={18} />
+  Resumen
 </div>
 
 <div
   className={`nav-item ${activeView === 'actividades' ? 'active' : ''}`}
-  onClick={() => {
-    setActiveView('actividades');
-    document.getElementById('activity-list')?.scrollIntoView({
-      behavior: 'smooth'
-    });
-  }}
+  onClick={() => navigateTo('actividades')}
 >
-  <CheckCircle2 size={18} /> Actividades
+  <CheckCircle2 size={18} />
+  Actividades
 </div>
 
 <div
@@ -337,11 +335,13 @@ function navigateTo(view) {
     setConfigPasswordOpen(true);
   }}
 >
-  <Archive size={18} /> Configuración
+  <Archive size={18} />
+  Configuración
 </div>
 
 <div className="sidebar-bottom">
-  <div className="online-dot" /> Guardado local automático
+  <div className="online-dot" />
+  Guardado local automático
   <span>Versión gratuita</span>
 </div>
 </aside>
