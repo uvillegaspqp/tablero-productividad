@@ -87,6 +87,34 @@ export default function App() {
     }
   }, [activities])
 
+  // Promedio de cierre segmentado por cubo: Proyectos I+D vs. los demás cubos.
+  const closeTimeByProject = useMemo(() => {
+    const completed = activities.filter(a =>
+      a.status === 'finalizada' &&
+      a.requestDate &&
+      a.executionDate
+    )
+    const isProjectsId = (activity) =>
+      String(activity.bucket || '').trim().toLocaleLowerCase('es-CO') === 'proyectos i+d'
+
+    const averageFor = (items) => {
+      const durations = items
+        .map(a => diffDays(a.requestDate, a.executionDate))
+        .filter(days => days !== null && days >= 0)
+      return {
+        count: durations.length,
+        average: durations.length
+          ? Math.round(durations.reduce((sum, days) => sum + days, 0) / durations.length * 10) / 10
+          : null
+      }
+    }
+
+    return {
+      other: averageFor(completed.filter(a => !isProjectsId(a))),
+      projects: averageFor(completed.filter(isProjectsId))
+    }
+  }, [activities])
+
   const filtered = useMemo(() => activities.filter(a => {
     const matchesQuery = `${a.title} ${a.description} ${a.responsible} ${a.bucket} ${a.process} ${a.plant || 'N/A'}`.toLowerCase().includes(query.toLowerCase())
     return matchesQuery && (statusFilter === 'todos' || a.status === statusFilter) && (bucketFilter === 'todos' || a.bucket === bucketFilter) && (plantFilter === 'todos' || (a.plant || 'N/A') === plantFilter)
@@ -188,7 +216,35 @@ export default function App() {
         <Kpi icon={<Clock3/>} label="En curso" value={totals.progress} sub="Con plazo vigente" tone="blue"/>
         <Kpi icon={<AlertTriangle/>} label="Retrasadas" value={totals.late} sub="Plazo vencido sin cerrar" tone="red"/>
         <Kpi icon={<CheckCircle2/>} label="Finalizadas" value={totals.done} sub={`${totals.donePct}% del total`} tone="green"/>
-        <Kpi icon={<CalendarClock/>} label="Promedio de cierre" value={`${totals.avgDays} d`} sub={`${totals.onTimePct}% finalizadas a tiempo`} tone="purple"/>
+      </section>
+
+      <section className="close-time-grid" aria-label="Promedio de tiempo de cierre por tipo de cubo">
+        <div className="close-time-card close-time-general">
+          <div className="close-time-card-top">
+            <div className="close-time-icon"><Clock3 size={19}/></div>
+            <span className="close-time-tag">GENERAL</span>
+          </div>
+          <h2>Promedio de cierre · Otros cubos</h2>
+          <p className="close-time-description">Actividades finalizadas en todos los cubos, excepto Proyectos I+D.</p>
+          <div className="close-time-value">{closeTimeByProject.other.average === null ? 'N/D' : `${closeTimeByProject.other.average} días`}</div>
+          <div className="close-time-foot">
+            <span>{closeTimeByProject.other.count} actividades finalizadas consideradas</span>
+            <span>{totals.onTimePct}% a tiempo · global</span>
+          </div>
+        </div>
+        <div className="close-time-card close-time-projects">
+          <div className="close-time-card-top">
+            <div className="close-time-icon"><Layers3 size={19}/></div>
+            <span className="close-time-tag">I+D</span>
+          </div>
+          <h2>Promedio de cierre · Proyectos I+D</h2>
+          <p className="close-time-description">Solo actividades finalizadas cuyo cubo es Proyectos I+D.</p>
+          <div className="close-time-value">{closeTimeByProject.projects.average === null ? 'N/D' : `${closeTimeByProject.projects.average} días`}</div>
+          <div className="close-time-foot">
+            <span>{closeTimeByProject.projects.count} actividades finalizadas consideradas</span>
+            <span>Desde solicitud hasta cierre</span>
+          </div>
+        </div>
       </section>
 
       <section className="overview-grid">
