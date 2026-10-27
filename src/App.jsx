@@ -69,6 +69,7 @@ export default function App() {
   const [newBucket, setNewBucket] = useState('')
   const [newProcess, setNewProcess] = useState('')
   const [newMember, setNewMember] = useState('')
+  const [activeView, setActiveView] = useState('resumen');
 
   useEffect(() => { localStorage.setItem(STORE_KEY, JSON.stringify(store)) }, [store])
   useEffect(() => {
@@ -294,12 +295,43 @@ export default function App() {
     <span>Tablero de gestión</span>
   </div>
 </div>
-      <div className="side-label">ESPACIO DE TRABAJO</div>
-      <div className="nav-item active"><Layers3 size={18}/> Resumen</div>
-      <div className="nav-item" onClick={()=>document.getElementById('activity-list')?.scrollIntoView({behavior:'smooth'})}><CheckCircle2 size={18}/> Actividades</div>
-      <div className="nav-item" onClick={()=>{setConfigPassword('');setConfigPasswordError('');setConfigPasswordOpen(true)}}><Archive size={18}/> Configuración</div>
-      <div className="sidebar-bottom"><div className="online-dot"/> Guardado local automático<span>Versión gratuita</span></div>
-    </aside>
+<div className="side-label">ESPACIO DE TRABAJO</div>
+
+<div
+  className={`nav-item ${activeView === 'resumen' ? 'active' : ''}`}
+  onClick={() => setActiveView('resumen')}
+>
+  <Layers3 size={18} /> Resumen
+</div>
+
+<div
+  className={`nav-item ${activeView === 'actividades' ? 'active' : ''}`}
+  onClick={() => {
+    setActiveView('actividades');
+    document.getElementById('activity-list')?.scrollIntoView({
+      behavior: 'smooth'
+    });
+  }}
+>
+  <CheckCircle2 size={18} /> Actividades
+</div>
+
+<div
+  className="nav-item"
+  onClick={() => {
+    setConfigPassword('');
+    setConfigPasswordError('');
+    setConfigPasswordOpen(true);
+  }}
+>
+  <Archive size={18} /> Configuración
+</div>
+
+<div className="sidebar-bottom">
+  <div className="online-dot" /> Guardado local automático
+  <span>Versión gratuita</span>
+</div>
+</aside>
 
     <main className="main">
       <header className="topbar">
